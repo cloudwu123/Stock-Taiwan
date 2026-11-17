@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="zh-Hant">
 <head>
@@ -194,7 +193,7 @@
 <main>
   <h1>台股籌碼與營收儀表板</h1>
   <div class="muted">
-    市場籌碼趨勢｜大盤與櫃買指數｜新臺幣匯率｜自選股法人買賣｜融資餘額｜月營收｜台指期空單
+    市場籌碼趨勢｜大盤與櫃買指數｜新臺幣匯率｜美國公債殖利率｜自選股法人買賣｜融資餘額｜月營收｜台指期空單
   </div>
 
  
@@ -294,6 +293,18 @@
       </div>
       <div class="chart-box">
         <canvas id="marketVolumeChart"></canvas>
+      </div>
+    </article>
+
+ 
+
+    <article class="panel">
+      <h2>近半年美國公債殖利率趨勢</h2>
+      <div id="treasuryYieldNote" class="muted">
+        短端：3 個月期｜長端：30 年期｜單位：%
+      </div>
+      <div class="chart-box">
+        <canvas id="treasuryYieldChart"></canvas>
       </div>
     </article>
 
@@ -948,11 +959,6 @@ async function fetchMarketVolumeRows() {
  
 
       return result.data.map(columns => {
-        /*
-         * FMTQIK 欄位：
-         * [0] 日期、[1] 成交股數、[2] 成交金額、
-         * [3] 成交筆數、[4] 發行量加權股價指數、[5] 漲跌點數
-         */
         const rocDate = String(columns[0] || "");
         const [rocYear, dateMonth, day] = rocDate
           .split("/")
@@ -1246,9 +1252,7 @@ async function loadMarketIndexCharts() {
     console.error("加權指數讀取失敗：", message);
   }
 
- 
-
-  /* 櫃買：FinMind 日頻櫃買報酬指數 */
+/* 櫃買：FinMind 日頻櫃買報酬指數 */
   if (otcResult.status === "fulfilled") {
     const otcData = otcResult.value;
 
@@ -1438,6 +1442,250 @@ async function loadFxChart() {
     $("fxNote").textContent = `讀取失敗：${error.message}`;
   }
 }
+
+ 
+
+ 
+
+/* 從美國財政部取得近半年每日公債殖利率 */
+async function fetchTreasuryYieldRows() {
+  const [startYear, startMonth] = sixMonthsAgo
+    .split("-")
+    .map(Number);
+
+ 
+
+  const [endYear, endMonth] = endDate
+    .split("-")
+    .map(Number);
+
+ 
+
+  const months = [];
+  const cursor = new Date(startYear, startMonth - 1, 1);
+  const lastMonth = new Date(endYear, endMonth - 1, 1);
+
+ 
+
+  while (cursor <= lastMonth) {
+    months.push({
+      year: cursor.getFullYear(),
+      month: cursor.getMonth() + 1
+    });
+
+ 
+
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+ 
+
+  const monthlyRows = await Promise.all(
+    months.map(async ({ year, month }) => {
+      const monthText = String(month).padStart(2, "0");
+
+ 
+
+      const params = new URLSearchParams({
+        data: "daily_treasury_yield_curve",
+        field_tdr_date_value_month: `${year}${monthText}`
+      });
+
+ 
+
+      const url =
+        "https://home.treasury.gov/resource-center/data-chart-center/" +
+        `interest-rates/pages/xml?${params.toString()}`;
+
+ 
+
+      let response;
+
+ 
+
+      try {
+        response = await fetch(url, { cache: "no-store" });
+      } catch {
+        throw new Error(
+          "無法連線美國財政部殖利率資料。請確認網路連線，或稍後再試。"
+        );
+      }
+
+ 
+
+      if (!response.ok) {
+        throw new Error(`美國財政部 API HTTP ${response.status}`);
+      }
+
+ 
+
+      const xmlText = await response.text();
+      const xmlDoc = new DOMParser().parseFromString(
+        xmlText,
+        "application/xml"
+      );
+
+ 
+
+      if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
+        throw new Error("美國財政部 API 回傳的 XML 格式無法解析。");
+      }
+
+ 
+
+      const allElements = Array.from(
+        xmlDoc.getElementsByTagName("*")
+      );
+
+ 
+
+      const entries = allElements.filter(
+        element => element.localName === "entry"
+      );
+
+ 
+
+      return entries.map(entry => {
+        const entryElements = Array.from(
+          entry.getElementsByTagName("*")
+        );
+
+ 
+
+        const properties = entryElements.find(
+          element => element.localName === "properties"
+        );
+
+ 
+
+        if (!properties) return null;
+
+ 
+
+        const propertyElements = Array.from(
+          properties.getElementsByTagName("*")
+        );
+
+ 
+
+        function getXmlValue(propertyName) {
+          const element = propertyElements.find(
+            item => item.localName === propertyName
+          );
+
+ 
+
+          return element?.textContent?.trim() || "";
+        }
+
+ 
+
+        const rawDate = getXmlValue("NEW_DATE");
+        const date = rawDate.slice(0, 10);
+
+ 
+
+        // 短端採 3 個月期，長端採 30 年期
+        const shortYield = Number(getXmlValue("BC_3MONTH"));
+        const longYield = Number(getXmlValue("BC_30YEAR"));
+
+ 
+
+        if (
+          !date ||
+          !Number.isFinite(shortYield) ||
+          !Number.isFinite(longYield)
+        ) {
+          return null;
+        }
+
+ 
+
+        return {
+          date,
+          shortYield,
+          longYield
+        };
+      });
+    })
+  );
+
+ 
+
+  return monthlyRows
+    .flat()
+    .filter(row =>
+      row &&
+      row.date >= sixMonthsAgo &&
+      row.date <= endDate
+    )
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+ 
+
+ 
+
+/* 繪製近半年美國公債殖利率 */
+async function loadTreasuryYieldChart() {
+  try {
+    const rows = await fetchTreasuryYieldRows();
+
+ 
+
+    if (rows.length === 0) {
+      throw new Error("美國財政部 API 沒有回傳近半年殖利率資料。");
+    }
+
+ 
+
+    createLineChart(
+      "treasuryYieldChart",
+      rows.map(row => row.date),
+      [
+        {
+          label: "短端｜3 個月期",
+          data: rows.map(row => row.shortYield),
+          color: "#55d6a2",
+          unit: "%"
+        },
+        {
+          label: "長端｜30 年期",
+          data: rows.map(row => row.longYield),
+          color: "#ffb86b",
+          unit: "%"
+        }
+      ],
+      "%",
+      {
+        yAxisTitle: "殖利率（%）"
+      }
+    );
+
+ 
+
+    $("treasuryYieldNote").textContent =
+      "資料來源：U.S. Treasury Daily Par Yield Curve｜短端 3 個月期、長端 30 年期｜單位：%";
+  } catch (error) {
+    console.error("美國公債殖利率圖表讀取失敗：", error);
+
+ 
+
+    createEmptyChart(
+      "treasuryYieldChart",
+      "美國公債殖利率資料讀取失敗"
+    );
+
+ 
+
+    $("treasuryYieldNote").textContent =
+      `讀取失敗：${error.message}`;
+  }
+}
+
+ 
+
+ 
 
 /* 讀取市場整體融資、融券及三大法人資料 */
 async function loadMarketCharts() {
@@ -2768,6 +3016,7 @@ $("refresh").addEventListener("click", async () => {
     await loadMarketIndexCharts();
     await loadFxChart();
     await loadMarketVolumeChart();
+    await loadTreasuryYieldChart();
     await loadFuturesShortChart();
     await loadMarketCharts();
     await loadStockCharts();
