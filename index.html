@@ -96,29 +96,6 @@
       position: relative;
     }
  
-    .tradingview-widget-container {
-      width: 100%;
-      height: 100%;
-    }
- 
-    .tradingview-widget-container__widget {
-      width: 100%;
-      height: calc(100% - 24px);
-    }
- 
-    .tradingview-widget-copyright {
-      height: 24px;
-      padding-top: 3px;
-      text-align: center;
-      font-size: 11px;
-      color: #9aa9bf;
-    }
- 
-    .tradingview-widget-copyright a {
-      color: #9aa9bf;
-      text-decoration: none;
-    }
- 
     .stock-inputs {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
@@ -168,7 +145,7 @@
 <main>
   <h1>台股籌碼與營收儀表板</h1>
   <div class="muted">
-    市場籌碼趨勢｜大盤與櫃買指數｜新臺幣匯率｜美國公債殖利率｜VIX｜費半｜自選股法人買賣｜融資餘額｜月營收｜台指期空單
+    市場籌碼趨勢｜大盤與櫃買指數｜新臺幣匯率｜美國公債殖利率｜自選股法人買賣｜融資餘額｜月營收｜台指期空單
   </div>
  
   <div class="toolbar">
@@ -216,38 +193,6 @@
       </div>
       <div class="chart-box">
         <canvas id="fxChart"></canvas>
-      </div>
-    </article>
- 
-    <article class="panel">
-      <h2>近半年 VIX 恐慌指數趨勢</h2>
-      <div class="muted">VIX｜日線｜近 6 個月</div>
-      <div class="chart-box">
-        <div class="tradingview-widget-container">
-          <div id="vixTradingView" class="tradingview-widget-container__widget"></div>
-          <div class="tradingview-widget-copyright">
-            <a href="https://www.tradingview.com/symbols/CBOE-VIX/"
-               target="_blank" rel="noopener nofollow">
-              VIX chart by TradingView
-            </a>
-          </div>
-        </div>
-      </div>
-    </article>
- 
-    <article class="panel">
-      <h2>近半年費城半導體指數趨勢</h2>
-      <div class="muted">PHLX Semiconductor Index（SOX）｜日線｜近 6 個月</div>
-      <div class="chart-box">
-        <div class="tradingview-widget-container">
-          <div id="soxTradingView" class="tradingview-widget-container__widget"></div>
-          <div class="tradingview-widget-copyright">
-            <a href="https://www.tradingview.com/symbols/NASDAQ-SOX/"
-               target="_blank" rel="noopener nofollow">
-              SOX chart by TradingView
-            </a>
-          </div>
-        </div>
       </div>
     </article>
   </section>
@@ -343,46 +288,6 @@ const twoMonthsAgo = monthsAgo(2);
 const oneMonthAgo = monthsAgo(1);
 const oneYearAgo = monthsAgo(12);
 const twoYearsAgo = monthsAgo(24);
- 
- 
-/* 初始化 TradingView 圖表：VIX 與費半 SOX */
-function loadTradingViewWidget(containerId, symbol) {
-  const container = $(containerId);
- 
-  if (!container) return;
- 
-  container.innerHTML = "";
- 
-  const script = document.createElement("script");
-  script.type = "text/javascript";
-  script.async = true;
-  script.src =
-    "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
- 
-  script.innerHTML = JSON.stringify({
-    autosize: true,
-    symbol,
-    interval: "D",
-    timezone: "Etc/UTC",
-    theme: "dark",
-    style: "1",
-    locale: "zh_TW",
-    range: "6M",
-    withdateranges: true,
-    hide_side_toolbar: true,
-    allow_symbol_change: false,
-    save_image: false,
-    calendar: false,
-    details: false,
-    hotlist: false,
-    support_host: "https://www.tradingview.com"
-  });
- 
-  container.appendChild(script);
-}
- 
-loadTradingViewWidget("vixTradingView", "CBOE:VIX");
-loadTradingViewWidget("soxTradingView", "NASDAQ:SOX");
  
  
 /* 建立 20 個自選股輸入欄位，並保存股票代碼 */
@@ -1105,6 +1010,8 @@ async function loadMarketIndexCharts() {
     console.error("櫃買指數讀取失敗：", message);
   }
 }
+ 
+ 
 /* 讀取近半年 USD/TWD 每日參考匯率並繪圖 */
 async function loadFxChart() {
   try {
@@ -1261,6 +1168,8 @@ async function fetchTreasuryYieldRows() {
  
         const rawDate = getXmlValue("NEW_DATE");
         const date = rawDate.slice(0, 10);
+ 
+        // 短端採 3 個月期，長端採 30 年期
         const shortYield = Number(getXmlValue("BC_3MONTH"));
         const longYield = Number(getXmlValue("BC_30YEAR"));
  
@@ -1290,8 +1199,6 @@ async function fetchTreasuryYieldRows() {
     )
     .sort((a, b) => a.date.localeCompare(b.date));
 }
- 
- 
 /* 繪製近半年美國公債殖利率 */
 async function loadTreasuryYieldChart() {
   try {
